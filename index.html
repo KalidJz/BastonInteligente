@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Plataforma: Bastón Inteligente — Prototipo</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#06b6d4; --muted:#9aa4b2; --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    html,body,#app{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    body{background:linear-gradient(180deg,#071029 0%, #07131b 100%);color:#e6eef6}
+
+    header{display:flex;align-items:center;gap:.75rem;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.03);}
+    header .brand{display:flex;align-items:center;gap:.5rem}
+    header h1{font-size:1.05rem;margin:0}
+    header p{margin:0;font-size:.8rem;color:var(--muted)}
+
+    .container{display:grid;grid-template-columns:1fr 360px;gap:14px;padding:14px;height:calc(100% - 64px)}
+    #map{width:100%;height:100%;border-radius:12px;box-shadow:0 6px 30px rgba(2,6,23,.6);overflow:hidden}
+
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+    .status{display:flex;gap:8px;flex-wrap:wrap}
+    .status .box{flex:1;padding:10px;background:rgba(255,255,255,.02);border-radius:10px;min-width:120px}
+    .status .box h3{margin:0;font-size:.75rem;color:var(--muted)}
+    .status .box p{margin:.35rem 0 0;font-weight:600}
+
+    .noti-list{overflow:auto;max-height:320px;padding-right:6px}
+    .noti{padding:10px;border-radius:8px;background:rgba(255,255,255,.02);margin-bottom:8px}
+    .noti time{display:block;font-size:.75rem;color:var(--muted)}
+
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button{background:var(--accent);color:#042027;border:0;padding:8px 10px;border-radius:8px;font-weight:700;cursor:pointer}
+    .btn-ghost{background:transparent;color:var(--accent);border:1px solid rgba(6,182,212,.12)}
+    .btn-danger{background:var(--danger);color:white}
+
+    footer{padding:8px 16px;color:var(--muted);font-size:.85rem}
+
+    .sos{position:fixed;right:16px;bottom:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
+    .sos button{width:64px;height:64px;border-radius:50%;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:1rem}
+
+    @media (max-width:880px){
+      .container{grid-template-columns:1fr;grid-auto-rows:1fr;padding:10px;height:calc(100% - 96px)}
+      .panel{position:fixed;right:10px;left:10px;bottom:10px;max-height:46%;z-index:800;padding:12px}
+      header{padding:10px}
+      .sos{right:12px;bottom:86px}
+    }
+
+    .muted{color:var(--muted)}
+    .badge{display:inline-block;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,.03);font-weight:700}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#06b6d4"/><path d="M7 12c0-3 2-5 5-5s5 2 5 5-2 5-5 5-5-2-5-5z" fill="#062d33" opacity=".95"/></svg>
+      </div>
+      <div style="flex:1">
+        <h1>Plataforma — Bastón Inteligente (Prototipo)</h1>
+        <p>Panel de supervisión para encargados de personas con discapacidad</p>
+      </div>
+      <div style="display:flex;gap:.6rem;align-items:center">
+        <div class="badge" id="connection">Conexión: <span id="connState">desconocida</span></div>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="map"></div>
+
+      <aside class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2 style="margin:0">Estado del Bastón</h2>
+          <div class="muted" id="lastSeen">Última: --</div>
+        </div>
+
+        <div class="status">
+          <div class="box">
+            <h3>ID</h3>
+            <p id="deviceId">Baston-001</p>
+          </div>
+          <div class="box">
+            <h3>Ubicación</h3>
+            <p id="coords">-- , --</p>
+          </div>
+          <div class="box">
+            <h3>Batería</h3>
+            <p id="battery">--%</p>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="centerBtn">Centrar mapa</button>
+          <button id="historyBtn" class="btn-ghost">Ver historial</button>
+          <button id="geofenceBtn" class="btn-ghost">Alternar geovalla</button>
+          <button id="clearNoti" class="btn-ghost">Limpiar notifs</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,.03)">
+
+        <h3 style="margin:0">Notificaciones</h3>
+        <div class="noti-list" id="notiList"></div>
+
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,.03)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <small class="muted">Prototipo — conecte su ESP32 al servidor o pegue datos manualmente</small>
+          <div style="display:flex;gap:8px">
+            <button id="testEvent" class="btn-ghost">Generar evento</button>
+            <button id="openSettings" class="btn-ghost">Ajustes</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="sos">
+      <button id="sosBtn" class="btn-danger">SOS</button>
+    </div>
+
+    <footer>
+      <small>Wa</small>
+    </footer>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <script>
+    const DATA_SOURCE = 'simulated'; 
+    const state = {
+      id: 'Baston-001',
+      lat: 19.2433,   // 📍 Colima
+      lon: -103.7240, // 📍 Colima
+      battery: 100,
+      lastSeen: null,
+      history: [],
+      conn: 'desconocida'
+    };
+
+    // 📍 Inicializar mapa centrado en Colima
+    const map = L.map('map', { attributionControl: false }).setView([state.lat, state.lon], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const marker = L.marker([state.lat, state.lon]).addTo(map).bindPopup('Bastón: ' + state.id);
+    const polyline = L.polyline([], { weight: 3, opacity: .9 }).addTo(map);
+
+    const geofenceCenter = [state.lat, state.lon];
+    const geofenceRadius = 300;
+    const geofence = L.circle(geofenceCenter, { radius: geofenceRadius, color: '#06b6d4', fill: false, dashArray: '6 6' }).addTo(map);
+
+    const elCoords = document.getElementById('coords');
+    const elBattery = document.getElementById('battery');
+    const elLast = document.getElementById('lastSeen');
+    const elConn = document.getElementById('connState');
+    const elDevice = document.getElementById('deviceId');
+    const notiList = document.getElementById('notiList');
+
+    function formatTime(ts){ return new Date(ts).toLocaleString(); }
+    function pushNotification(text){ 
+      const div = document.createElement('div'); 
+      div.className = 'noti';
+      div.innerHTML = `<strong>${text}</strong><time>${formatTime(Date.now())}</time>`;
+      notiList.prepend(div);
+    }
+
+    function updateUI(){
+      elCoords.textContent = state.lat.toFixed(6) + ' , ' + state.lon.toFixed(6);
+      elBattery.textContent = Math.round(state.battery) + '%';
+      elLast.textContent = state.lastSeen ? formatTime(state.lastSeen) : '--';
+      elConn.textContent = state.conn;
+      elDevice.textContent = state.id;
+
+      marker.setLatLng([state.lat, state.lon]);
+      marker.setPopupContent(`Bastón: ${state.id} — ${state.battery}%`);
+      polyline.setLatLngs(state.history.map(h => [h.lat, h.lon]));
+    }
+
+    // Simulación de movimiento
+    setInterval(() => {
+      const jitter = (Math.random() - 0.5) / 5000;
+      state.lat += jitter; state.lon += jitter / 1.2;
+      state.battery = Math.max(5, state.battery - Math.random() * 0.7);
+      state.lastSeen = Date.now();
+      state.history.push({ lat: state.lat, lon: state.lon, ts: state.lastSeen });
+      if (state.history.length > 200) state.history.shift();
+      state.conn = 'simulado';
+      updateUI();
+    }, 3000);
+
+    // Botones
+    document.getElementById('centerBtn').addEventListener('click', () => map.setView([state.lat, state.lon], 16));
+    document.getElementById('historyBtn').addEventListener('click', () => map.fitBounds(polyline.getBounds().pad(0.4)));
+    document.getElementById('clearNoti').addEventListener('click', () => notiList.innerHTML = '');
+    document.getElementById('testEvent').addEventListener('click', () => pushNotification('Evento simulado'));
+    document.getElementById('sosBtn').addEventListener('click', () => pushNotification('🚨 SOS enviado'));
+
+    pushNotification('Mapa inicializado en Colima 📍');
+    updateUI();
+  </script>
+</body>
+</html>
